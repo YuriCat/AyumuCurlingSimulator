@@ -68,8 +68,8 @@ namespace FastSimulator {
     }
 
     bool has_collision_chance_aw_as(const Stone& aw, const Stone& as) {
-        // determine the possibility of collision between moving stones
-        // 動く石同士の衝突可能性判定
+        // determine the possibility of collision between a moving stone and a stopped stone
+        // 動く石と静止している石の衝突可能性判定
         fpn_t dx = as.x - aw.x;
         fpn_t dy = as.y - aw.y;
         if (xy2r2(dx, dy) > r2r2(aw.gr + 2 * R_STONE_RADIUS)) return false; // R judge
@@ -225,6 +225,7 @@ namespace FastSimulator {
             updated.set(index1);
 
             // update distance and relative velocity 距離と相対速度の更新
+            if (num_contacts == 1) break;
             for (int i = 0; i < num_contacts; i++) {
                 auto [i0, i1, d, sp] = contact[i];
                 if (i == min_index) {
@@ -319,6 +320,9 @@ namespace FastSimulator {
                         else if (i1 == iaw) collidable[iaw].reset(i0);
                     }
                 }
+
+                for (int iaw : BitSet32(awake & ~updated)) collidable[iaw] |= updated;
+
                 // update static contacts
                 // 静止コンタクトリストの整理
                 for (int i = 0; i < num_static_contacts;) {
@@ -345,6 +349,7 @@ namespace FastSimulator {
                     }
                 }
                 if (r_asleep != 100000) {
+                    r_asleep = std::min(r_asleep, aw.gr * (aw.gth - aw.th).c);
                     fpn_t ngr = std::sqrt(std::max(fpn_t(0), aw.gr * aw.gr + r_asleep * r_asleep - 2 * aw.gr * r_asleep * (aw.gth - aw.th).c));
                     fpn_t ngt = __r2t(ngr);
                     min_contact_time = std::min(min_contact_time, aw.gt - ngt);
@@ -365,6 +370,7 @@ namespace FastSimulator {
             // if no stones are possible to collide, locate every moving stone to goal positions and finish
             // 全ての石が衝突せずに静止する事が証明されたならば、すべての石を置いて終わり
             if (min_contact_time == 100000) break;
+            if (min_contact_time <= 0) break;
 
             // update each stone status by time
             // それぞれの石を移動可能な時間分動かす
@@ -406,23 +412,22 @@ namespace FastSimulator {
     bool simulate(Sheet& sheet, int turn, const Shot& shot, bool freeguard, bool rink_only) {
         if (!sheet.stone_bits) { // free draw with no obstacles
             Position p = shot2dest(shot);
-            sheet.set_stone(turn, p);
+            if (!rink_only || is_in_play_area(p.x, p.y)) sheet.set_stone(turn, p);
             return false;
         } else {
-            bool fg[16];
+            BitSet32 fg = 0;
             Sheet tmp;
             if (freeguard) {
                 tmp = sheet;
-                for (int i = 0; i < 16; i++) {
-                    fg[i] = i % 2 != turn % 2 && is_in_freeguard_zone(sheet.stone[i].x, sheet.stone[i].y);
+                for (int i = 1 - turn % 2; i < 16; i += 2) {
+                    if ((sheet.stone_bits & (1U << i)) && is_in_freeguard_zone(sheet.stone[i].x, sheet.stone[i].y)) fg.set(i);
                 }
             }
-            sheet.set_moving_stone(turn, X_THROW, Y_THROW, xy2r(shot.vx, shot.vy), xy2ang(shot.vx, shot.vy), spin2wthrow(shot.spin));
+            sheet.set_moving_stone(turn, X_THROW, Y_THROW, std::min(V_SIMULATION_MAX, xy2r(shot.vx, shot.vy)), xy2ang(shot.vx, shot.vy), spin2wthrow(shot.spin));
             simulate(sheet, rink_only);
             if (freeguard) {
-                for (int i = 0; i < 16; i++) {
-                    if (fg[i] && !is_in_play_area(sheet.stone[i].x, sheet.stone[i].y))
-                    {
+                for (int i : fg) {
+                    if (!(sheet.stone_bits & (1U << i))) {
                         sheet = tmp; // unnecessary if original board is already copied before simulation
                         return true;
                     }
