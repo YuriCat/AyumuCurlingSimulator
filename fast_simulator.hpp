@@ -6,14 +6,18 @@
 #define AYUMU_CURLING_SIMULATOR_HPP_
 
 #include <algorithm>
-#include <array>
 #include <bit>
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <iterator>
-#include <random>
 #include <sstream>
+#include <string>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846264338327950288
+#endif
 
 
 namespace FastSimulator {
@@ -305,8 +309,7 @@ namespace FastSimulator {
         fpn_t vx() const { return v * th.s; }
         fpn_t vy() const { return v * th.c; }
 
-        template <class position_t>
-        void set(const position_t& pos) {
+        void set(const Position& pos) {
             x = pos.x;
             y = pos.y;
             v = w = 0;
@@ -398,7 +401,7 @@ namespace FastSimulator {
     }
 
     // simulation base
-    template <class float_t>
+    template <typename float_t>
     void friction_step(float_t vx, float_t vy, float_t w, float_t *nvx, float_t *nvy, float_t *nw, float_t time_step) {
         // update velocity
         float_t v = xy2r(vx, vy);

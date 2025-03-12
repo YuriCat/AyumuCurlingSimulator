@@ -1,7 +1,7 @@
 CXX        = c++
-CXXFLAGS   = -std=c++20 -MMD -MP
-OPT        = -O3 -march=native -flto -DNDEBUG -fPIC
-#OPT       := -O0 -g -fPIC
+CXXFLAGS   = -std=c++20 -MMD -MP -fPIC
+OPT        = -O3 -march=native -DNDEBUG
+#OPT       := -O0 -g
 LDFLAGS    =
 LIBS       =
 INCLUDES   =
@@ -20,7 +20,7 @@ PYLDFLAGS += -undefined dynamic_lookup
 endif
 PYINCLUDES = $(INCLUDES) $(shell python3-config --includes) -I./pybind11/include/
 
-DEPENDS  = $(OBJS:.o=.d)
+DEPENDS    = $(OBJS:.o=.d) $(TARGETOBJS:.o=.d)
 
 default: $(TARGET)
 py: $(PYTARGET)

@@ -2,6 +2,9 @@
 // Ayumu Curling Simulator
 // Katsuki Ohto
 
+#include <array>
+#include <tuple>
+#include <vector>
 #include "fast_simulator.hpp"
 
 
@@ -247,7 +250,6 @@ namespace FastSimulator {
         // コンタクトの状況を調べる
         std::tuple<int, int, fpn_t, fpn_t> contact[32];
         int num_contacts = 0;
-        int num_heading_contacts = 0;
         for (int i = 0; i < 16; i++) {
             if (!(sheet.stone_bits & (1 << i))) continue;
             for (int j = 0; j < i; j++) {
@@ -266,8 +268,8 @@ namespace FastSimulator {
 
     // fast simulation
     bool simulate(Sheet& sheet, bool rink_only) {
-        BitSet32 awake(sheet.moving_stone_bits); // moving stone bits
-        BitSet32 asleep(sheet.stone_bits & ~awake); // stopped stone bits
+        BitSet32 awake = sheet.moving_stone_bits; // moving stone bits
+        BitSet32 asleep = sheet.stone_bits & ~awake; // stopped stone bits
         BitSet32 collidable[16]; //collidable stone bits from each moving stones それぞれの動石から衝突可能な石のビット集合
         std::tuple<int, int, fpn_t, fpn_t> contact[32];
         int num_static_contacts = 0;
@@ -425,13 +427,9 @@ namespace FastSimulator {
             }
             sheet.set_moving_stone(turn, X_THROW, Y_THROW, std::min(V_SIMULATION_MAX, xy2r(shot.vx, shot.vy)), xy2ang(shot.vx, shot.vy), spin2wthrow(shot.spin));
             simulate(sheet, rink_only);
-            if (freeguard) {
-                for (int i : fg) {
-                    if (!(sheet.stone_bits & (1U << i))) {
-                        sheet = tmp; // unnecessary if original board is already copied before simulation
-                        return true;
-                    }
-                }
+            if (fg & ~sheet.stone_bits) {
+                sheet = tmp; // unnecessary if original board is already copied before simulation
+                return true;
             }
             return false;
         }
@@ -446,7 +444,7 @@ namespace FastSimulator {
         int last_rest = 0;
         double last_time = 0;
         double last_vth = 0;
-        double tmp[100001][6];
+        std::vector<std::array<double, 6>> tmp(100001);
         for (int t = 0; t <= 1000000; t++) {
             if (!(vx == 0 && vy == 0))
             {
@@ -501,7 +499,7 @@ namespace FastSimulator {
         // table from time to stop
         // 時刻からの変換テーブル
         for (int i = 0; i <= __TABLE; i++) {
-            int j = std::min(100000 - 1, last_index + i * 100000 / __TABLE);
+            int j = std::min(100000 - 1, last_index + i * (100000 / __TABLE));
             double c = i == 0 ? 0 : (1 - last_rest / 10.0);
             traj_table[i][0] = (1 - c) * tmp[j][0] + c * tmp[j + 1][0];
             traj_table[i][1] = (1 - c) * tmp[j][2] + c * tmp[j + 1][2];
@@ -518,7 +516,7 @@ namespace FastSimulator {
         // 速度からの変換テーブル
         for (int i = 0; i <= __TABLE; i++) {
             double v = 5.0 * i / __TABLE;
-            int j = i == 0 ? 0 : std::upper_bound(tmp, tmp + 100000, std::array<double, 6>({0, 0, v, 0, 0, 0}), [](auto x, auto y) { return x[2] < y[2]; }) - tmp - 1;
+            int j = i == 0 ? 0 : std::upper_bound(tmp.begin(), tmp.end() - 1, std::array<double, 6>({0, 0, v, 0, 0, 0}), [](auto x, auto y) { return x[2] < y[2]; }) - tmp.begin() - 1;
             double c = i == 0 ? 0.0 : (v - tmp[j][2]) / (tmp[j + 1][2] - tmp[j][2]);
             double r   = (1 - c) * tmp[j][0] + c * tmp[j + 1][0];
             double oth = (1 - c) * tmp[j][1] + c * tmp[j + 1][1];
@@ -536,7 +534,7 @@ namespace FastSimulator {
         for (int i = 0; i <= __TABLE; i++) {
             double r_ = 14.0 * i / __TABLE;
             double r = r_ * r_;
-            int j = i == 0 ? 0 : std::upper_bound(tmp, tmp + 100000, std::array<double, 6>({r, 0, 0, 0, 0, 0}), [](auto x, auto y) { return x[0] < y[0]; }) - tmp - 1;
+            int j = i == 0 ? 0 : std::upper_bound(tmp.begin(), tmp.end() - 1, std::array<double, 6>({r, 0, 0, 0, 0, 0}), [](auto x, auto y) { return x[0] < y[0]; }) - tmp.begin() - 1;
             double c = tmp[j][0] == tmp[j + 1][0] ? 0 : std::min(1.0, (r - tmp[j][0]) / (tmp[j + 1][0] - tmp[j][0]));
             double v = (1 - c) * tmp[j][2] + c * tmp[j + 1][2];
             double t = (1 - c) * tmp[j][5] + c * tmp[j + 1][5];
