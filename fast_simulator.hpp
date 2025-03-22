@@ -51,7 +51,7 @@ namespace FastSimulator {
     // stone parameters
     const fpn_t FRICTION_STONES = 0.2;
 
-    const fpn_t RESTITUTION_STONES = 1; // perfectly elastic collision
+    const fpn_t RESTITUTION_COEFFICIENT = 1; // perfectly elastic collision
     const fpn_t RESTITUTION_THRESHOLD = 0;
 
     const fpn_t MASS_STONE = 19.96;
@@ -400,7 +400,7 @@ namespace FastSimulator {
         return true;
     }
 
-    // simulation base
+    // friction model
     template <typename float_t>
     void friction_step(float_t vx, float_t vy, float_t w, float_t *nvx, float_t *nvy, float_t *nw, float_t time_step) {
         // update velocity
@@ -424,16 +424,12 @@ namespace FastSimulator {
         }
     }
 
-    extern PositionTime simulate_solo(Shot shot, fpn_t time_step);
+    // stone movement slow simulation
+    extern PositionTime simulate_solo(Shot shot, double time_step);
 
     // collision
     extern void collision(Stone *s0, Stone *s1, bool stopped = false);
     extern BitSet32 resolve_contacts(Sheet& sheet);
-
-    // collision possibility
-    extern bool has_collision_chance_aw_as(const Stone& aw, const Stone& as);
-    extern fpn_t min_contact_mr_aw_as(const Stone& aw, const Stone& as);
-    extern fpn_t min_contact_time_2aw(const Stone& oaw0, const Stone& oaw1, fpn_t basetime);
 
     // trajectory data
     constexpr int __TABLE = 25000; // divisors of 100,000 only 100000の約数である必要あり
@@ -489,13 +485,12 @@ namespace FastSimulator {
         Angle gth = __t2gth(gt);
         Angle gvth = __t2vth(gt);
         fpn_t dr = gr - r;
-        while (1) {
+        for (int i = 0; i < 2; i++) { // 2-step is enough
             fpn_t dt = __r2t(dr);
             Angle dth = __t2gth(dt);
             fpn_t nr2 = gr * gr + dr * dr - 2 * gr * dr * (gth - dth).c;
             fpn_t nr = std::sqrt(std::max(fpn_t(0), nr2));
             dr += nr - r;
-            if (std::abs(nr - r) < 1e-4) break;
         }
         Angle th0 = gvth - gth;
         Angle th1 = Angle::from_cos((gr * gr + r * r - dr * dr) / (2 * gr * r));

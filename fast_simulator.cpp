@@ -16,12 +16,12 @@ namespace FastSimulator {
     Initializer __initializer;
 
     // solo simulation
-    PositionTime simulate_solo(Shot shot, fpn_t time_step) {
-        fpn_t x = X_THROW;
-        fpn_t y = Y_THROW;
-        fpn_t vx = shot.vx;
-        fpn_t vy = shot.vy;
-        fpn_t w = spin2wthrow(shot.spin);
+    PositionTime simulate_solo(Shot shot, double time_step) {
+        double x = X_THROW;
+        double y = Y_THROW;
+        double vx = shot.vx;
+        double vy = shot.vy;
+        double w = spin2wthrow(shot.spin);
         int t = 0;
         friction_step(vx, vy, w, &vx, &vy, &w, time_step / 2);
         while (1) {
@@ -51,12 +51,11 @@ namespace FastSimulator {
         fpn_t vn = v0n - v1n;
         fpn_t vt = v0t - v1t;
 
-        fpn_t ni_m = vn;
-        if (vn <= RESTITUTION_THRESHOLD) ni_m /= 2;
-        fpn_t max_friction = FRICTION_STONES * ni_m;
+        fpn_t ni_m = vn <= RESTITUTION_THRESHOLD ? 0 : vn * RESTITUTION_COEFFICIENT;
 
-        fpn_t old_tangent_lambda = fpn_t(1 / 6.0) * (vt - (w0 + w1) * R_STONE_RADIUS);
-        fpn_t ti_m = clip(old_tangent_lambda, -max_friction, +max_friction);
+        fpn_t max_friction = ni_m * FRICTION_STONES;
+        fpn_t ti_m_ = fpn_t(1 / 6.0) * (vt - (w0 + w1) * R_STONE_RADIUS);
+        fpn_t ti_m = clip(ti_m_, -max_friction, +max_friction);
 
         fpn_t dw = ti_m * fpn_t(2.0 / R_STONE_RADIUS);
 
@@ -70,7 +69,7 @@ namespace FastSimulator {
         if (stopped) s1->w = dw; else s1->w += dw;
     }
 
-    bool has_collision_chance_aw_as(const Stone& aw, const Stone& as) {
+    inline bool has_collision_chance_aw_as(const Stone& aw, const Stone& as) {
         // determine the possibility of collision between a moving stone and a stopped stone
         // 動く石と静止している石の衝突可能性判定
         fpn_t dx = as.x - aw.x;
@@ -81,12 +80,11 @@ namespace FastSimulator {
         else                             { l = aw.gth; r = aw.th;  }
         if (dx * l.c - dy * l.s < -2 * R_STONE_RADIUS) return false; // side judge
         if (dx * r.c - dy * r.s > +2 * R_STONE_RADIUS) return false; // side sudge
-        if (dx * l.s + dy * l.c < 0) return false; // back judge
-        if (dx * r.s + dy * r.c < 0) return false; // back judge
+        if (dx * aw.th.s + dy * aw.th.c < 0) return false; // back judge
         return true;
     }
 
-    fpn_t min_contact_mr_aw_as(const Stone& aw, const Stone& as) {
+    inline fpn_t min_contact_mr_aw_as(const Stone& aw, const Stone& as) {
         // lower bound on distance to collision between moving stone and stopped stone
         // 静止している石に衝突するまでの距離の下界
         Angle l, r;
@@ -106,7 +104,7 @@ namespace FastSimulator {
         return mr;
     }
 
-    fpn_t min_contact_time_2aw(const Stone& aw0, const Stone& aw1, fpn_t basetime) {
+    inline fpn_t min_contact_time_2aw(const Stone& aw0, const Stone& aw1, fpn_t basetime) {
         // lower bound on collision time between moving stones
         // 動いている石同士の衝突時刻の下界
         if (distance2(aw0, aw1) > r2r2(aw0.gr + aw1.gr + 2 * R_STONE_RADIUS)) return 100000;
@@ -148,17 +146,17 @@ namespace FastSimulator {
             return;
         }
         gr = __v2r(v);
-        Angle gdth = __v2th(v);
+        Angle dth = __v2th(v);
         gt = __v2t(v);
         oth = __t2gth(gt);
         wp = __t2wp(gt);
         if (is_left_spin(w2spin(w))) {
-            gdth = -gdth;
+            dth = -dth;
             oth = -oth;
         } else {
             wp = -wp;
         }
-        gth = th + gdth;
+        gth = th + dth;
         fpn_t dx, dy;
         rotate(gr, fpn_t(0), gth, &dy, &dx);
         gx = x + dx;
@@ -191,7 +189,8 @@ namespace FastSimulator {
         x = gx + dx;
         y = gy + dy;
         v = nv;
-        th = gth + oth - novth;
+        Angle dth = novth - noth;
+        th = ngth - dth;
         // step goal information
         gr = ngr;
         gth = ngth;
@@ -203,14 +202,14 @@ namespace FastSimulator {
     BitSet32 resolve_contacts_(Sheet& sheet, std::tuple<int, int, fpn_t, fpn_t> *contact, int num_contacts) {
         // resolve contacts until there is no heading contacts
         // 向き合っているコンタクトが無くなるまで繰り返し衝突を処理
-        BitSet32 updated(0);
+        BitSet32 updated = 0;
         while (1) {
             // find the earliest collision
-            // 最も速く衝突するコンタクトを探す
+            // 最も早く衝突するコンタクトを探す
             int min_index = -1;
             fpn_t min_time = 100000;
             for (int i = 0; i < num_contacts; i++) {
-                auto [i0, i1, d, sp] = contact[i];
+                auto [_, __, d, sp] = contact[i];
                 if (sp > 0) {
                     fpn_t t = d / std::max(fpn_t(1e-16), sp);
                     if (t < min_time) {
@@ -232,7 +231,8 @@ namespace FastSimulator {
             for (int i = 0; i < num_contacts; i++) {
                 auto [i0, i1, d, sp] = contact[i];
                 if (i == min_index) {
-                    contact[i] = std::make_tuple(i0, i1, fpn_t(0), -sp);
+                    fpn_t nsp = sp <= RESTITUTION_THRESHOLD ? 0 : (sp * -RESTITUTION_COEFFICIENT);
+                    contact[i] = std::make_tuple(i0, i1, fpn_t(0), nsp);
                 } else if (i0 == index0 || i0 == index1 || i1 == index0 || i1 == index1) {
                     contact[i] = std::make_tuple(i0, i1, d - min_time * sp, heading_speed(sheet.stone[i0], sheet.stone[i1]));
                 } else if (sp != 0) {
@@ -285,7 +285,7 @@ namespace FastSimulator {
             }
         }
 
-        for (int t_ = 0; t_ < 1000; t_++) {
+        for (int t = 0; t < 1000; t++) {
             // start collision procedure
             // ここから衝突処理
             int num_contacts = num_static_contacts;
@@ -385,12 +385,12 @@ namespace FastSimulator {
                     awake.reset(iaw);
 
                     if (!rink_only || is_in_play_area(aw.x, aw.y)) {
-                        asleep.set(iaw);
                         for (int ias : asleep) {
                             const Stone& as = sheet.stone[ias];
                             if (has_contact(aw, as)) contact[num_static_contacts++] =
                                 std::make_tuple(iaw, ias, distance(aw, as), fpn_t(0));
                         }
+                        asleep.set(iaw);
                     }
                 } else {
                     aw.step_by_next_time(min_contact_time);
@@ -497,7 +497,7 @@ namespace FastSimulator {
         }
 
         // table from time to stop
-        // 時刻からの変換テーブル
+        // 時間からの変換テーブル
         for (int i = 0; i <= __TABLE; i++) {
             int j = std::min(100000 - 1, last_index + i * (100000 / __TABLE));
             double c = i == 0 ? 0 : (1 - last_rest / 10.0);
